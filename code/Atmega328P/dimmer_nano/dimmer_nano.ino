@@ -177,18 +177,114 @@ void initZeroCrossingInterrupt(){
 class Encoder{
 public:
 
-  void init(byte pin1, byte pin2){
-     *digitalPinToPCMSK(pin1) |= bit (digitalPinToPCMSKbit(pin1));  // enable pin
+  /**
+   * @brief Initialize encoder for particular set of pins
+   * 
+   * TODO: update this to work with pushbutton on/off
+   * 
+   * @param pin1 the first pin getting tied low from encoder
+   * @param pin2 the second pin getting tied low from encoder
+   * @param pinb the button pin corresponding to the push button
+   */
+  void init(byte pin1, byte pin2, byte pinb){
+    
+
+    dimval_ = 0;
+    pin1_ = pin1;
+    pin2_ = pin2;
+    pinb_ = pinb;
+    
+    *digitalPinToPCMSK(pin1) |= bit (digitalPinToPCMSKbit(pin1));  // enable pin
     PCIFR  |= bit (digitalPinToPCICRbit(pin1)); // clear any outstanding interrupt
     PCICR  |= bit (digitalPinToPCICRbit(pin1)); // enable interrupt for the group
   
     *digitalPinToPCMSK(pin2) |= bit (digitalPinToPCMSKbit(pin2));  // enable pin
     PCIFR  |= bit (digitalPinToPCICRbit(pin2)); // clear any outstanding interrupt
     PCICR  |= bit (digitalPinToPCICRbit(pin2)); // enable interrupt for the group
+
+    *digitalPinToPCMSK(pinb) |= bit (digitalPinToPCMSKbit(pinb));  // enable pin
+    PCIFR  |= bit (digitalPinToPCICRbit(pinb)); // clear any outstanding interrupt
+    PCICR  |= bit (digitalPinToPCICRbit(pinb)); // enable interrupt for the group
     
-    pinMode(Pin1Enc1, INPUT_PULLUP);
-    pinMode(Pin2Enc1, INPUT_PULLUP);
+    pinMode(pin1, INPUT_PULLUP);
+    pinMode(pin2, INPUT_PULLUP);
+    pinMode(pinb, INPUT_PULLUP);
   }
+
+  /**
+   * @brief Get the current dimmer value [0, 100]
+   */
+  uint8_t dimval(){return dimval_;}
+
+  /** 
+   * @brief Set the dimmer value
+   */
+  void set_dimval(uint8_t dimval){
+    dimval = dimval < 0 ? 0 : dimval;
+    dimval_ = dimval > 100 ? 100 : dimval; 
+  }
+
+  /**
+   * @brief needs to be called every time there is a pin change
+   */
+  void ISR_pins_changed(){
+    static int encLastState = 0;
+    int encState = 0;
+    
+    static int encLastVal1 = 0;
+    int encVal1 = 0;
+    
+    static int encLastVal2 = 0;
+    int encVal2 = 0;
+    
+    const int dimStep = 4;
+  
+    static int lastDir = 0; // 1 for right, -1 left
+    static int dir = 0; // 1 for right, -1 left
+  
+    encVal1 = digitalRead(pin1_);
+    encVal2 = digitalRead(pin2_);
+    encState = encVal2 << 1 | encVal1;
+  
+    if(enc1State == 0){
+      dir = encLastState == 1 ? -1 : 1;
+    }else if(encState == 1){
+      dir = encLastState == 3 ? -1 : 1;
+    }else if(encState == 2){
+      dir = encLastState == 0 ? -1 : 1;
+    }else if(encState == 3){
+      dir = encLastState == 2 ? -1 : 1;
+    }
+  
+    if(dir == lastDir){
+      if((encLastState == 2) && (encState == 0)){
+        dimval_ += dimStep;
+      }else if((enc1LastState == 1) && (enc1State == 3)){
+        dimval_ += dimStep;
+      }
+      dimval_ = dimval_ > 99? 99 : dimval_;
+  
+      if((encLastState == 1) && (encState == 0)){
+        dimval_ -= dimStep;
+      }else if((encLastState == 2) && (encState == 3)){
+        dimval_ -= dimStep;
+      }
+        
+      dimval_ = dimval_ < 0? 0 : dimval_;
+    }
+    //setDelay2(dtable[dimval]);
+    lastDir = dir;
+
+    encLastState = encState; 
+  }
+
+private:
+  uint8_t dimval_;
+  byte pin1_;
+  byte pin2_;
+  byte pinb_;
+
+  
   
 };
 
@@ -268,8 +364,6 @@ ISR(PCINT0_vect){
 
 void initEncoder1(){
 
-  //PCICR |= 0b00000100;
-  //PCMSK0|= 0b00000011;
 
   *digitalPinToPCMSK(Pin1Enc1) |= bit (digitalPinToPCMSKbit(Pin1Enc1));  // enable pin
   PCIFR  |= bit (digitalPinToPCICRbit(Pin1Enc1)); // clear any outstanding interrupt
